@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Fabric.js JSON Example</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+  <script src="https://unpkg.com/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
   <style>
     canvas {
       border: 1px solid #ccc;
@@ -15,23 +16,15 @@
 
 <body>
   <canvas id="canvas" width="600" height="400"></canvas>
-  <button onclick="emulateOnline()">Emulate online behaviour</button>
+  <button onclick="addCircle()">Add Circle</button>
   <script>
     // Initialize Fabric.js canvas
+    const socket = io();
     const canvas = new fabric.Canvas('canvas');
-
-    // Example JSON string representing Fabric.js objects
     const jsonString = `{
             "objects": [
                 {
-                    "type": "rect",
-                    "left": 100,
-                    "top": 100,
-                    "width": 100,
-                    "height": 100,
-                    "fill": "red"
-                },
-                {
+                    "id": 123123,
                     "type": "circle",
                     "left": 250,
                     "top": 100,
@@ -41,39 +34,52 @@
             ],
             "background": "white"
         }`;
-
-    // Load objects from JSON
     canvas.loadFromJSON(jsonString, canvas.renderAll.bind(canvas), (o, object) => {
       console.log('Object loaded:', object);
     });
 
-
-    function emulateOnline() {
-      const circle = new fabric.Circle({
-        id: 10000,
+    //Add Circle
+    function addCircle() {
+      const circle = {
+        id: Math.floor(100000 + Math.random() * 900000),
         left: 200,
         top: 100,
         fill: 'blue',
         radius: 30
-      });
-
-      // Add the circle to the canvas
-      canvas.add(circle);
-
-      setInterval(() => {
-        moveCircle(circle);
-    }, 1000); // Change position every 1000 milliseconds (1 second)
+      };
+      canvas.add(new fabric.Circle(circle))
+      socket.emit('addCircle', circle)
     }
 
-    function moveCircle(circle) {
-    // Update the circle's coordinates
-    circle.left += 10; // Move right by 10 pixels
-    circle.top += 5;   // Move down by 5 pixels
-    
-    // Update the circle's coordinates in the canvas
-    circle.setCoords();
-    canvas.renderAll(); // Render the updated canvas
-}
+    //Recieve circle
+    socket.on('receiveCircle', (data) => {
+      canvas.add(new fabric.Circle(data))
+    });
+
+
+    //Object modified
+    canvas.on('object:modified', function (e) {
+      const data = {
+        id: e.target.id,
+        left: e.target.left,
+        top: e.target.top,
+        scaleX: e.target.scaleX,
+        scaleY: e.target.scaleY,
+        angle: e.target.angle,
+        radius: e.target.radius
+      };
+      socket.emit('objectModified', data);
+    });
+
+    //Recieve object modified
+    socket.on('recieveObjectModified', (data) => {
+      const object = canvas.getObjects().find(x => x.id === data.id);
+      object.set({ ...data });
+      object.setCoords();
+      canvas.renderAll();
+    })
+
+
   </script>
 </body>
 

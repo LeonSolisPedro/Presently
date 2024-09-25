@@ -15,23 +15,14 @@ app.use(express.static('public'));
 
 
 io.on('connection', (socket) => {
-  // Load initial file content on connection
-  fs.readFile(FILE_PATH, 'utf8', (err, data) => {
-      if (!err) {
-          socket.emit('receiveEdit', data);
-      }
-  });
 
-  socket.on('edit', (data) => {
-      socket.broadcast.emit('receiveEdit', data);
+    socket.on('addCircle', (data) => {
+        socket.broadcast.emit('receiveCircle', data);
+    });
 
-      // Write data to file
-      fs.writeFile(FILE_PATH, data, (err) => {
-          if (err) {
-              console.error('Error writing to file:', err);
-          }
-      });
-  });
+    socket.on('objectModified', (data) => {
+        socket.broadcast.emit('recieveObjectModified', data)
+    })
 });
 
 
