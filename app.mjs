@@ -34,6 +34,9 @@ io.on('connection', (socket) => {
     socket.on('drawing', (string) => {
         socket.broadcast.emit('drawing', string);
     });
+    socket.on('addText', (string) => {
+        socket.broadcast.emit('receiveText', string);
+    });
 });
 
 

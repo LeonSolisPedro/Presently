@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Fabric.js JSON Example</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+  <script src="fabric.brushes.min.js"></script>
   <script src="https://unpkg.com/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
   <style>
@@ -29,6 +30,7 @@
     const socket = io();
     const canvas = new fabric.Canvas('canvas');
     canvas.selection = false; //Temporary
+    let idImageSocket = 0
     const jsonString = `{
             "objects": [
                 {
@@ -173,26 +175,42 @@
     //Brush
     function addBrush() {
       canvas.isDrawingMode = true
-      canvas.freeDrawingBrush = new fabric.CircleBrush(canvas, { width: 30, color: '#ff7f50', opacity: 1 });
+      canvas.freeDrawingBrush = new fabric.InkBrush(canvas, { width: 100, color: 'blue' });
     }
-    canvas.on('path:created', function (event) {
-      const path = event.path
-      path.id = Math.floor(100000 + Math.random() * 900000)
-      const string = JSON.stringify(path.toJSON(['id']))
-      socket.emit('drawing', string);
+    canvas.on('object:added', function (event) {
+      if (event.target.type === 'image') {
+        const exists = canvas.getObjects().some(x => x.id === idImageSocket);
+        if (exists) return
+        const image = event.target
+        image.id = Math.floor(100000 + Math.random() * 900000)
+        const string = JSON.stringify(image.toJSON(['id']))
+        socket.emit('drawing', string);
+      }
     });
     socket.on('drawing', (string) => {
-      var groupObject = JSON.parse(string);
-      fabric.util.enlivenObjects(groupObject.objects, function (objects) {
-        var group = new fabric.Group(objects, groupObject);
-        canvas.add(group);
+      const objectData = JSON.parse(string);
+      const imageUrl = objectData.src;
+      fabric.Image.fromURL(imageUrl, function (img) {
+        img.set({
+          id: objectData.id,
+          left: objectData.left,
+          top: objectData.top,
+          scaleX: objectData.scaleX,
+          scaleY: objectData.scaleY,
+          angle: objectData.angle,
+          flipX: objectData.flipX,
+          flipY: objectData.flipY,
+        });
+        idImageSocket = objectData.id;
+        canvas.add(img);
       });
     });
 
 
     //Text
     function addText() {
-      const text = new fabric.Textbox('Editable Text', {
+      const text = {
+        id: Math.floor(100000 + Math.random() * 900000),
         left: 50,
         top: 50,
         fontSize: 24,
@@ -201,29 +219,38 @@
         fontFamily: 'Arial',
         fill: '#333',
         textAlign: 'center'
-      });
-
-      // Add the text object to the canvas
-      canvas.add(text);
+      };
+      const o = new fabric.Textbox('Editable Text', text)
+      canvas.add(o)
+      canvas.setActiveObject(o)
+      socket.emit("addText", text)
     }
+    socket.on('receiveText', (text) => {
+      canvas.add(new fabric.Textbox('Editable Text', text))
+    });
 
 
 
     //Object modified
     canvas.on('object:modified', function (e) {
       const data = {
+        text: e.target.text,
         id: e.target.id,
         left: e.target.left,
         top: e.target.top,
         scaleX: e.target.scaleX,
         scaleY: e.target.scaleY,
         angle: e.target.angle,
-        radius: e.target.radius
+        radius: e.target.radius,
+        width: e.target.width,
+        flipX: e.target.flipX,
+        flipY: e.target.flipY,
       };
       socket.emit('objectModified', data);
     });
     socket.on('recieveObjectModified', (data) => {
       const object = canvas.getObjects().find(x => x.id === data.id);
+      if (object === undefined) return
       object.set({ ...data });
       object.setCoords();
       canvas.renderAll();
