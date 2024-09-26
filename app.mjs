@@ -19,10 +19,21 @@ io.on('connection', (socket) => {
     socket.on('addCircle', (data) => {
         socket.broadcast.emit('receiveCircle', data);
     });
-
+    socket.on('addSquare', (data) => {
+        socket.broadcast.emit('receiveSquare', data);
+    });
+    socket.on('addLine', (data) => {
+        socket.broadcast.emit('receiveLine', data);
+    });
+    socket.on('addLineArrow', (data) => {
+        socket.broadcast.emit('receiveLineArrow', data);
+    });
     socket.on('objectModified', (data) => {
         socket.broadcast.emit('recieveObjectModified', data)
     })
+    socket.on('drawing', (string) => {
+        socket.broadcast.emit('drawing', string);
+    });
 });
 
 

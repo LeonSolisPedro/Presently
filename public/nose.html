@@ -7,6 +7,7 @@
   <title>Fabric.js JSON Example</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
   <script src="https://unpkg.com/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
   <style>
     canvas {
       border: 1px solid #ccc;
@@ -16,11 +17,18 @@
 
 <body>
   <canvas id="canvas" width="600" height="400"></canvas>
-  <button onclick="addCircle()">Add Circle</button>
+  <button onclick="addCircle()"><i class="fa-solid fa-circle"></i></button>
+  <button onclick="addSquare()"><i class="fa-solid fa-square"></i></button>
+  <button onclick="addLine()"><i class="fa-solid fa-minus" style="transform: rotate(45deg);"></i></button>
+  <button onclick="addLineArrow()"><i class="fa-solid fa-arrow-right-long"
+      style="transform: rotate(45deg);"></i></button>
+  <button onclick="addBrush()"><i class="fa-solid fa-paintbrush"></i></button>
+  <button onclick="addText()"><i class="fa-solid fa-font"></i></button>
   <script>
     // Initialize Fabric.js canvas
     const socket = io();
     const canvas = new fabric.Canvas('canvas');
+    canvas.selection = false; //Temporary
     const jsonString = `{
             "objects": [
                 {
@@ -38,7 +46,7 @@
       console.log('Object loaded:', object);
     });
 
-    //Add Circle
+    //Circle
     function addCircle() {
       const circle = {
         id: Math.floor(100000 + Math.random() * 900000),
@@ -47,14 +55,158 @@
         fill: 'blue',
         radius: 30
       };
-      canvas.add(new fabric.Circle(circle))
+      const o = new fabric.Circle(circle)
+      canvas.add(o)
+      canvas.setActiveObject(o)
       socket.emit('addCircle', circle)
     }
-
-    //Recieve circle
-    socket.on('receiveCircle', (data) => {
-      canvas.add(new fabric.Circle(data))
+    socket.on('receiveCircle', (circle) => {
+      canvas.add(new fabric.Circle(circle))
     });
+
+
+    //Square
+    function addSquare() {
+      const square = {
+        id: Math.floor(100000 + Math.random() * 900000),
+        left: 200,
+        top: 100,
+        fill: 'blue',
+        width: 100,
+        height: 100
+      };
+      const o = new fabric.Rect(square)
+      canvas.add(o)
+      canvas.setActiveObject(o)
+      socket.emit('addSquare', square)
+    }
+    socket.on('receiveSquare', (square) => {
+      canvas.add(new fabric.Rect(square))
+    });
+
+    //Line
+    function addLine() {
+      const line = {
+        id: Math.floor(100000 + Math.random() * 900000),
+        x1: 50,
+        y1: 50,
+        x2: 200,
+        y2: 200,
+        stroke: 'black',
+        strokeWidth: 5
+      };
+      const o = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
+        id: line.id,
+        stroke: line.stroke,
+        strokeWidth: line.strokeWidth
+      });
+      canvas.add(o)
+      canvas.setActiveObject(o)
+      socket.emit('addLine', line);
+    }
+    socket.on('receiveLine', (line) => {
+      const receivedLine = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
+        id: line.id,
+        stroke: line.stroke,
+        strokeWidth: line.strokeWidth
+      });
+      canvas.add(receivedLine);
+    });
+
+
+    // Line Arrow
+    function addLineArrow() {
+      const arrow = {
+        x1: 50,
+        y1: 50,
+        x2: 200,
+        y2: 200,
+        stroke: 'black',
+        strokeWidth: 5,
+        arrowSize: 10
+      };
+      const line = new fabric.Line([arrow.x1, arrow.y1, arrow.x2, arrow.y2], {
+        stroke: arrow.stroke,
+        strokeWidth: arrow.strokeWidth
+      });
+      const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
+      const arrowhead = new fabric.Triangle({
+        left: arrow.x2 + 5,
+        top: arrow.y2 + 5,
+        originX: 'center',
+        originY: 'center',
+        angle: angle * 180 / Math.PI + 90,
+        width: arrow.arrowSize,
+        height: arrow.arrowSize,
+        fill: arrow.stroke
+      });
+      const o = new fabric.Group([line, arrowhead]);
+      const id = Math.floor(100000 + Math.random() * 900000);
+      o.set({ id });
+      canvas.add(o);
+      canvas.setActiveObject(o);
+      socket.emit('addLineArrow', { ...arrow, id });
+    }
+    socket.on('receiveLineArrow', (arrow) => {
+      const line = new fabric.Line([arrow.x1, arrow.y1, arrow.x2, arrow.y2], {
+        stroke: arrow.stroke,
+        strokeWidth: arrow.strokeWidth
+      });
+      const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
+      const arrowhead = new fabric.Triangle({
+        left: arrow.x2 + 5,
+        top: arrow.y2 + 5,
+        originX: 'center',
+        originY: 'center',
+        angle: angle * 180 / Math.PI + 90,
+        width: arrow.arrowSize,
+        height: arrow.arrowSize,
+        fill: arrow.stroke
+      });
+      const o = new fabric.Group([line, arrowhead]);
+      o.set({ id: arrow.id });
+      canvas.add(o);
+    });
+
+
+
+    //Brush
+    function addBrush() {
+      canvas.isDrawingMode = true
+      canvas.freeDrawingBrush = new fabric.CircleBrush(canvas, { width: 30, color: '#ff7f50', opacity: 1 });
+    }
+    canvas.on('path:created', function (event) {
+      const path = event.path
+      path.id = Math.floor(100000 + Math.random() * 900000)
+      const string = JSON.stringify(path.toJSON(['id']))
+      socket.emit('drawing', string);
+    });
+    socket.on('drawing', (string) => {
+      var groupObject = JSON.parse(string);
+      fabric.util.enlivenObjects(groupObject.objects, function (objects) {
+        var group = new fabric.Group(objects, groupObject);
+        canvas.add(group);
+      });
+    });
+
+
+    //Text
+    function addText() {
+      const text = new fabric.Textbox('Editable Text', {
+        left: 50,
+        top: 50,
+        fontSize: 24,
+        width: 200,
+        editable: true,
+        fontFamily: 'Arial',
+        fill: '#333',
+        textAlign: 'center'
+      });
+
+      // Add the text object to the canvas
+      canvas.add(text);
+    }
+
 
 
     //Object modified
@@ -70,8 +222,6 @@
       };
       socket.emit('objectModified', data);
     });
-
-    //Recieve object modified
     socket.on('recieveObjectModified', (data) => {
       const object = canvas.getObjects().find(x => x.id === data.id);
       object.set({ ...data });
