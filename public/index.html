@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Presently</title>
+    <script src="https://unpkg.com/vue@3"></script>
+    <script src="https://unpkg.com/vue-router@4"></script>
+    <script src="https://unpkg.com/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+    <script src="fabric.brushes.min.js"></script>
+    <style>
+      canvas {
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="app">
+      <nav>
+        <router-link to="/">Home</router-link>
+        <router-link to="/slider">Slider</router-link>
+      </nav>
+      <router-view></router-view>
+    </div>
+
+    <script>
+      // Define your components
+      const Home = {
+        template: /*html*/ `
+        <h1>Home</h1>
+        <p></p>
+      `,
+      };
+
+      const Slider = {
+        template: /* HTML */ `
+          <canvas id="canvas" ref="canvas" width="600" height="400"></canvas>
+          <button @click="addCircle()"><i class="fa-solid fa-circle"></i></button>
+          <button @click="addSquare()"><i class="fa-solid fa-square"></i></button>
+          <button @click="addLine()"><i class="fa-solid fa-minus" style="transform: rotate(45deg);"></i></button>
+          <button @click="addLineArrow()"><i class="fa-solid fa-arrow-right-long" style="transform: rotate(45deg);"></i></button>
+          <button @click="addBrush()"><i class="fa-solid fa-paintbrush"></i></button>
+          <button @click="addText()"><i class="fa-solid fa-font"></i></button>
+        `,
+        setup() {
+          let canvas = null;
+          return {
+            canvas,
+          };
+        },
+        data() {
+          return {
+            socket: null,
+            idImageSocket: 0,
+            isDrawingMode: false,
+          };
+        },
+        mounted() {
+          //Todo: Fix this later...
+          this.socket = io();
+          this.canvas = new fabric.Canvas("canvas");
+          // this.canvas.selection = false; //Temporary
+          const jsonString = `{
+            "objects": [
+                {
+                    "id": 123123,
+                    "type": "circle",
+                    "left": 250,
+                    "top": 100,
+                    "radius": 50,
+                    "fill": "blue"
+                }
+            ],
+            "background": "white"
+        }`;
+          this.canvas.loadFromJSON(jsonString, this.canvas.renderAll.bind(this.canvas), (o, object) => {
+            console.log("Object loaded:", object);
+          });
+
+          //Circle
+          this.socket.on("receiveCircle", (circle) => {
+            this.canvas.add(new fabric.Circle(circle));
+          });
+
+          //Square
+          this.socket.on("receiveSquare", (square) => {
+            this.canvas.add(new fabric.Rect(square));
+          });
+
+          //Line
+          this.socket.on("receiveLine", (line) => {
+            const receivedLine = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
+              id: line.id,
+              stroke: line.stroke,
+              strokeWidth: line.strokeWidth,
+            });
+            this.canvas.add(receivedLine);
+          });
+
+          // Line Arrow
+          this.socket.on("receiveLineArrow", (arrow) => {
+            const line = new fabric.Line([arrow.x1, arrow.y1, arrow.x2, arrow.y2], {
+              stroke: arrow.stroke,
+              strokeWidth: arrow.strokeWidth,
+            });
+            const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
+            const arrowhead = new fabric.Triangle({
+              left: arrow.x2 + 5,
+              top: arrow.y2 + 5,
+              originX: "center",
+              originY: "center",
+              angle: (angle * 180) / Math.PI + 90,
+              width: arrow.arrowSize,
+              height: arrow.arrowSize,
+              fill: arrow.stroke,
+            });
+            const o = new fabric.Group([line, arrowhead]);
+            o.set({ id: arrow.id });
+            this.canvas.add(o);
+          });
+
+          //Brush
+          this.canvas.on("object:added", (event) => {
+            if (event.target.type === "image") {
+              const exists = this.canvas.getObjects().some((x) => x.id === this.idImageSocket);
+              if (exists) return;
+              const image = event.target;
+              image.id = Math.floor(100000 + Math.random() * 900000);
+              const string = JSON.stringify(image.toJSON(["id"]));
+              this.socket.emit("drawing", string);
+            }
+          });
+          this.socket.on("drawing", (string) => {
+            const objectData = JSON.parse(string);
+            const imageUrl = objectData.src;
+            fabric.Image.fromURL(imageUrl, (img) => {
+              img.set({
+                id: objectData.id,
+                left: objectData.left,
+                top: objectData.top,
+                scaleX: objectData.scaleX,
+                scaleY: objectData.scaleY,
+                angle: objectData.angle,
+                flipX: objectData.flipX,
+                flipY: objectData.flipY,
+              });
+              this.idImageSocket = objectData.id;
+              this.canvas.add(img);
+            });
+          });
+
+          //Text
+          this.socket.on("receiveText", (text) => {
+            this.canvas.add(new fabric.Textbox("Editable Text", text));
+          });
+
+          //Object modified
+          this.canvas.on("object:modified", (e) => {
+            const data = {
+              text: e.target.text,
+              id: e.target.id,
+              left: e.target.left,
+              top: e.target.top,
+              scaleX: e.target.scaleX,
+              scaleY: e.target.scaleY,
+              angle: e.target.angle,
+              radius: e.target.radius,
+              width: e.target.width,
+              flipX: e.target.flipX,
+              flipY: e.target.flipY,
+            };
+            this.socket.emit("objectModified", data);
+          });
+          this.socket.on("recieveObjectModified", (data) => {
+            const object = this.canvas.getObjects().find((x) => x.id === data.id);
+            if (object === undefined) return;
+            object.set({ ...data });
+            object.setCoords();
+            this.canvas.renderAll();
+          });
+        },
+        methods: {
+          //Circle
+          addCircle() {
+            const circle = {
+              id: Math.floor(100000 + Math.random() * 900000),
+              left: 200,
+              top: 100,
+              fill: "blue",
+              radius: 30,
+            };
+            const o = new fabric.Circle(circle);
+            this.canvas.add(o);
+            this.canvas.setActiveObject(o);
+            this.socket.emit("addCircle", circle);
+          },
+
+          //Square
+          addSquare() {
+            const square = {
+              id: Math.floor(100000 + Math.random() * 900000),
+              left: 200,
+              top: 100,
+              fill: "blue",
+              width: 100,
+              height: 100,
+            };
+            const o = new fabric.Rect(square);
+            this.canvas.add(o);
+            this.canvas.setActiveObject(o);
+            this.socket.emit("addSquare", square);
+          },
+
+          //Line
+          addLine() {
+            const line = {
+              id: Math.floor(100000 + Math.random() * 900000),
+              x1: 50,
+              y1: 50,
+              x2: 200,
+              y2: 200,
+              stroke: "black",
+              strokeWidth: 5,
+            };
+            const o = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
+              id: line.id,
+              stroke: line.stroke,
+              strokeWidth: line.strokeWidth,
+            });
+            this.canvas.add(o);
+            this.canvas.setActiveObject(o);
+            this.socket.emit("addLine", line);
+          },
+
+          // Line Arrow
+          addLineArrow() {
+            const arrow = {
+              x1: 50,
+              y1: 50,
+              x2: 200,
+              y2: 200,
+              stroke: "black",
+              strokeWidth: 5,
+              arrowSize: 10,
+            };
+            const line = new fabric.Line([arrow.x1, arrow.y1, arrow.x2, arrow.y2], {
+              stroke: arrow.stroke,
+              strokeWidth: arrow.strokeWidth,
+            });
+            const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
+            const arrowhead = new fabric.Triangle({
+              left: arrow.x2 + 5,
+              top: arrow.y2 + 5,
+              originX: "center",
+              originY: "center",
+              angle: (angle * 180) / Math.PI + 90,
+              width: arrow.arrowSize,
+              height: arrow.arrowSize,
+              fill: arrow.stroke,
+            });
+            const o = new fabric.Group([line, arrowhead]);
+            const id = Math.floor(100000 + Math.random() * 900000);
+            o.set({ id });
+            this.canvas.add(o);
+            this.canvas.setActiveObject(o);
+            this.socket.emit("addLineArrow", { ...arrow, id });
+          },
+
+          //Brush
+          addBrush() {
+            this.isDrawingMode = !this.isDrawingMode;
+            this.canvas.isDrawingMode = this.isDrawingMode;
+            this.canvas.freeDrawingBrush = new fabric.InkBrush(this.canvas, { width: 100, color: "blue" });
+          },
+
+          //Text
+          addText() {
+            const text = {
+              id: Math.floor(100000 + Math.random() * 900000),
+              left: 50,
+              top: 50,
+              fontSize: 24,
+              width: 200,
+              editable: true,
+              fontFamily: "Arial",
+              fill: "#333",
+              textAlign: "center",
+            };
+            const o = new fabric.Textbox("Editable Text", text);
+            this.canvas.add(o);
+            this.canvas.setActiveObject(o);
+            this.socket.emit("addText", text);
+          },
+        },
+      };
+
+      // Create router
+      const routes = [
+        { path: "/", component: Home },
+        { path: "/slider", component: Slider },
+      ];
+
+      const router = VueRouter.createRouter({
+        history: VueRouter.createWebHashHistory(),
+        routes,
+      });
+
+      // Create Vue app
+      const app = Vue.createApp({});
+      app.use(router);
+      const vm = app.mount("#app");
+    </script>
+  </body>
+</html>
