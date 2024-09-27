@@ -58,7 +58,6 @@
         data() {
           return {
             socket: null,
-            idImageSocket: 0,
             isDrawingMode: false,
             currentSlide: 1,
             numberOfSlides: null,
@@ -123,8 +122,8 @@
           //Brush
           this.canvas.on("object:added", (event) => {
             if (event.target.type === "image") {
-              const exists = this.canvas.getObjects().some((x) => x.id === this.idImageSocket);
-              if (exists) return;
+              const exists1 = this.canvas.getObjects().some(x => x.id === (event.target?.id || 0));
+              if (exists1) return;
               const image = event.target;
               image.id = Math.floor(100000 + Math.random() * 900000);
               const string = JSON.stringify(image.toJSON(["id"]));
@@ -132,7 +131,7 @@
               this.saveUndoRedo(image)
             }
           });
-          this.socket.on("drawing", (string) => {
+          this.socket.on("receiveDrawing", (string) => {
             const objectData = JSON.parse(string);
             const imageUrl = objectData.src;
             fabric.Image.fromURL(imageUrl, (img) => {
@@ -146,7 +145,6 @@
                 flipX: objectData.flipX,
                 flipY: objectData.flipY,
               });
-              this.idImageSocket = objectData.id;
               this.canvas.add(img);
             });
           });
@@ -326,7 +324,7 @@
 
 
           debugPrint(){
-            console.log(this.canvas.toJSON(["id"]))
+            alert((this.canvas.toJSON(["id"]).objects.length))
           },
 
           destroyUndoRedo(){

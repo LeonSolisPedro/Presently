@@ -48,7 +48,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('drawing', (string, room) => {
-    socket.to(room).emit('drawing', string);
+    socket.to(room).emit('receiveDrawing', string);
   });
 
   socket.on('addText', (string, room) => {
