@@ -39,7 +39,7 @@
       const Slider = {
         template: /* HTML */ `
           <div tabindex="0" @keyup.delete="remove">
-            <canvas  id="canvas" ref="canvas" width="600" height="400"></canvas>
+            <canvas id="canvas" width="600" height="400"></canvas>
           </div>
           <button @click="addCircle()"><i class="fa-solid fa-circle"></i></button>
           <button @click="addSquare()"><i class="fa-solid fa-square"></i></button>
@@ -48,6 +48,15 @@
           <button @click="addBrush()"><i class="fa-solid fa-paintbrush"></i></button>
           <button @click="addText()"><i class="fa-solid fa-font"></i></button>
           <button @click="debugPrint()"><i class="fa-solid fa-bug"></i></button>
+          <p>Connected users:</p>
+          <ul>
+            <li v-for="user of connectedUsers">
+              {{user.name}} - {{user.permission}}
+              <span v-if="user.name === username"> (current)</span>
+              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'viewer'"> (<a href="javascript:void(0)">Make editor</a>)</span>
+              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'editor'"> (<a href="javascript:void(0)">Make viewer</a>)</span>
+            </li>
+          </ul>
         `,
         setup() {
           let canvas = null;
@@ -61,21 +70,37 @@
             isDrawingMode: false,
             currentSlide: 1,
             numberOfSlides: null,
-            room: ""
+            room: "",
+            roomFolder: "",
+            connectedUsers: [],
+            currentUser: ""
           };
         },
+        computed: {
+          currentPermission() {
+            return this.connectedUsers.find((x) => x.name === this.username)?.permission ?? "viewer";
+          },
+        },
         async mounted() {
-          
-          //Todo: Fix this later...
           this.socket = io();
+          this.room = `room${this.$route.params.id}.${this.currentSlide}`;
+          this.roomFolder = `room${this.$route.params.id}`;
+          this.username = localStorage.getItem("username") ?? "editor1";
+          this.socket.emit("joinPresentation", this.roomFolder, this.username);
+          // Corregir esto despues
           this.canvas = new fabric.Canvas("canvas");
-          this.room = `room${this.$route.params.id}`
-          const response = await axios.get(`/api/getSlide/${this.room}`)
+          const response = await axios.get(`/api/getSlide/${this.roomFolder}?page=${this.currentSlide}`);
           this.canvas.selection = false; //Temporary
           this.canvas.loadFromJSON(response.data.content, this.canvas.renderAll.bind(this.canvas), (o, object) => {
             console.log("Object loaded:", object);
+            this.socket.emit("joinRoom", this.room);
           });
-          this.socket.emit('joinRoom', this.room);
+
+          //Lista de usuarios
+          this.socket.on("receivePresentation", (users) => {
+            const uniqueUsers = [...new Map(users.map((x) => [x["name"], x])).values()];
+            this.connectedUsers = uniqueUsers;
+          });
 
           //Circle
           this.socket.on("receiveCircle", (circle) => {
@@ -122,13 +147,13 @@
           //Brush
           this.canvas.on("object:added", (event) => {
             if (event.target.type === "image") {
-              const exists1 = this.canvas.getObjects().some(x => x.id === (event.target?.id || 0));
+              const exists1 = this.canvas.getObjects().some((x) => x.id === (event.target?.id || 0));
               if (exists1) return;
               const image = event.target;
               image.id = Math.floor(100000 + Math.random() * 900000);
               const string = JSON.stringify(image.toJSON(["id"]));
               this.socket.emit("drawing", string, this.room);
-              this.saveUndoRedo(image)
+              this.saveUndoRedo(image);
             }
           });
           this.socket.on("receiveDrawing", (string) => {
@@ -170,8 +195,8 @@
               flipY: e.target.flipY,
             };
             this.socket.emit("objectModified", data, this.room);
-            console.log(e.target.toJSON(["id"]))
-            this.saveUndoRedo()
+            console.log(e.target.toJSON(["id"]));
+            this.saveUndoRedo();
           });
           this.socket.on("receiveObjectModified", (data) => {
             const object = this.canvas.getObjects().find((x) => x.id === data.id);
@@ -185,7 +210,7 @@
           this.socket.on("deleteObject", (id) => {
             const object = this.canvas.getObjects().find((x) => x.id === id);
             this.canvas.remove(object);
-          })
+          });
         },
         methods: {
           //Circle
@@ -201,7 +226,7 @@
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
             this.socket.emit("addCircle", circle, this.room);
-            this.saveUndoRedo(o)
+            this.saveUndoRedo(o);
           },
 
           //Square
@@ -218,7 +243,7 @@
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
             this.socket.emit("addSquare", square, this.room);
-            this.saveUndoRedo(o)
+            this.saveUndoRedo(o);
           },
 
           //Line
@@ -240,7 +265,7 @@
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
             this.socket.emit("addLine", line, this.room);
-            this.saveUndoRedo(o)
+            this.saveUndoRedo(o);
           },
 
           // Line Arrow
@@ -275,7 +300,7 @@
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
             this.socket.emit("addLineArrow", { ...arrow, id }, this.room);
-            this.saveUndoRedo(o)
+            this.saveUndoRedo(o);
           },
 
           //Brush
@@ -302,41 +327,39 @@
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
             this.socket.emit("addText", text, this.room);
-            this.saveUndoRedo(o)
+            this.saveUndoRedo(o);
           },
 
           //Remove
-          remove(){
-            const id = this.canvas.getActiveObject().id
+          remove() {
+            const id = this.canvas.getActiveObject().id;
             this.socket.emit("deleteObject", id, this.room);
             this.canvas.remove(this.canvas.getActiveObject());
-            this.saveUndoRedo({id, type: "Delete"})
+            this.saveUndoRedo({ id, type: "Delete" });
           },
-
 
           //Undo - Redo
-          saveUndoRedo(o){
+          saveUndoRedo(o) {
             // alert("Saving undo history")
             // console.log(o.toJSON(["id"]))
-            const disk = this.canvas.toJSON(["id"])
-            this.socket.emit("saveDataDisk", JSON.stringify(disk), this.room)
+            const disk = this.canvas.toJSON(["id"]);
+            this.socket.emit("saveDataDisk", JSON.stringify(disk), this.room);
           },
 
-
-          debugPrint(){
-            alert((this.canvas.toJSON(["id"]).objects.length))
+          debugPrint() {
+            alert(this.canvas.toJSON(["id"]).objects.length);
           },
 
-          destroyUndoRedo(){
-            alert("Destroying undo history")
-          }
+          destroyUndoRedo() {
+            alert("Destroying undo history");
+          },
         },
         beforeRouteLeave(to, from, next) {
-          this.canvas.dispose()
-          this.canvas = null
+          this.canvas.dispose();
+          this.canvas = null;
           this.socket.removeAllListeners();
-          this.socker = null
-          this.destroyUndoRedo()
+          this.socket = null;
+          this.destroyUndoRedo();
           next();
         },
       };

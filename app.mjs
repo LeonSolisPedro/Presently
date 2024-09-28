@@ -15,15 +15,40 @@ const io = new Server(server);
 app.use(express.static('public'));
 
 
+let users = [];
+
 
 io.on('connection', (socket) => {
+
+  socket.on("joinPresentation", async (room, username) => {
+    socket.join(room);
+    const buffer = await fss.readFile(`slides/${room}/info.json`);
+    const jsonData = JSON.parse(buffer);
+    //Determines the type of role of the current logged user
+    let role;
+    if (username === jsonData.creator) {
+      role = "creator";
+    } else if (jsonData.editors.includes(username)) {
+      role = "editor";
+    } else {
+      role = "viewer";
+    }
+    const user = { idSocket: socket.id, id: room, name: username, permission: role }
+    users.push(user)
+    io.to(room).emit('receivePresentation', users);
+  });
 
   socket.on('joinRoom', (room) => {
     socket.join(room);
   });
 
-  socket.on('leaveRoom', (room) => {
-    socket.leave(room);
+
+  socket.on('disconnect', () => {
+    users = users.filter(x => x.idSocket !== socket.id)
+    const rooms = io.sockets.adapter.rooms;
+    for (let room of rooms.keys()) {
+      io.to(room).emit('receivePresentation', users); // Emit to all rooms
+    }
   });
 
 
@@ -60,7 +85,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('saveDataDisk', (string, room) => {
-    const ostream = fs.createWriteStream(`./slides/${room}/slide1.json`, { encoding: 'utf8' });
+    const slide = room.split(".")
+    const ostream = fs.createWriteStream(`./slides/${slide[0]}/slide${slide[1]}.json`, { encoding: 'utf8' });
     const readable = Readable.from(string);
     readable.pipe(ostream);
   });
