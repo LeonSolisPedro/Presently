@@ -48,13 +48,14 @@
           <button @click="addBrush()"><i class="fa-solid fa-paintbrush"></i></button>
           <button @click="addText()"><i class="fa-solid fa-font"></i></button>
           <button @click="debugPrint()"><i class="fa-solid fa-bug"></i></button>
+          <p>You're a {{currentPermission}}</p>
           <p>Connected users:</p>
           <ul>
             <li v-for="user of connectedUsers">
               {{user.name}} - {{user.permission}}
               <span v-if="user.name === username"> (current)</span>
-              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'viewer'"> (<a href="javascript:void(0)">Make editor</a>)</span>
-              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'editor'"> (<a href="javascript:void(0)">Make viewer</a>)</span>
+              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'viewer'"> (<a @click="setPermission(roomFolder,user.name,'editor')">Make editor</a>)</span>
+              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'editor'"> (<a @click="setPermission(roomFolder,user.name,'viewer')">Make viewer</a>)</span>
             </li>
           </ul>
         `,
@@ -98,6 +99,7 @@
 
           //Lista de usuarios
           this.socket.on("receivePresentation", (users) => {
+            debugger
             const uniqueUsers = [...new Map(users.map((x) => [x["name"], x])).values()];
             this.connectedUsers = uniqueUsers;
           });
@@ -213,6 +215,10 @@
           });
         },
         methods: {
+          setPermission(room,user,permission){
+            this.socket.emit("modifyPermission", room, user, permission);
+          },
+
           //Circle
           addCircle() {
             const circle = {

@@ -5,7 +5,6 @@ import http from "http"
 import fs from "fs"
 import fss from "fs/promises"
 import { Readable } from "stream"
-const FILE_PATH = './document.txt';
 
 const app = express();
 app.use(cors());
@@ -37,6 +36,20 @@ io.on('connection', (socket) => {
     users.push(user)
     io.to(room).emit('receivePresentation', users);
   });
+
+  socket.on("modifyPermission", async (room, username, permission) => {
+    const usersToUpdate  = users.filter(x => x.id === room && x.name === username)
+    for (const user of usersToUpdate)
+      user.permission = permission
+    const buffer = await fss.readFile(`slides/${room}/info.json`);
+    let jsonData = JSON.parse(buffer);
+    if(permission === "viewer") jsonData.editors = jsonData.editors.filter(x => x !== username)
+    if(permission === "editor") jsonData.editors.push(username)
+    const ostream = fs.createWriteStream(`./slides/${room}/info.json`, { encoding: 'utf8' });
+    const readable = Readable.from(JSON.stringify(jsonData));
+    readable.pipe(ostream);
+    io.to(room).emit('receivePresentation', users);
+  })
 
   socket.on('joinRoom', (room) => {
     socket.join(room);
