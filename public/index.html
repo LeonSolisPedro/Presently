@@ -41,23 +41,28 @@
           <div tabindex="0" @keyup.delete="remove">
             <canvas id="canvas" width="600" height="400"></canvas>
           </div>
-          <button @click="addCircle()"><i class="fa-solid fa-circle"></i></button>
-          <button @click="addSquare()"><i class="fa-solid fa-square"></i></button>
-          <button @click="addLine()"><i class="fa-solid fa-minus" style="transform: rotate(45deg);"></i></button>
-          <button @click="addLineArrow()"><i class="fa-solid fa-arrow-right-long" style="transform: rotate(45deg);"></i></button>
-          <button @click="addBrush()"><i class="fa-solid fa-paintbrush"></i></button>
-          <button @click="addText()"><i class="fa-solid fa-font"></i></button>
-          <button @click="debugPrint()"><i class="fa-solid fa-bug"></i></button>
+          <div v-if="currentPermission !== 'viewer'">
+            <button @click="addCircle()"><i class="fa-solid fa-circle"></i></button>
+            <button @click="addSquare()"><i class="fa-solid fa-square"></i></button>
+            <button @click="addLine()"><i class="fa-solid fa-minus" style="transform: rotate(45deg);"></i></button>
+            <button @click="addLineArrow()"><i class="fa-solid fa-arrow-right-long" style="transform: rotate(45deg);"></i></button>
+            <button @click="addBrush()"><i class="fa-solid fa-paintbrush"></i></button>
+            <button @click="addText()"><i class="fa-solid fa-font"></i></button>
+            <button @click="debugPrint()"><i class="fa-solid fa-bug"></i></button>
+          </div>
+
           <p>You're a {{currentPermission}}</p>
           <p>Connected users:</p>
           <ul>
             <li v-for="user of connectedUsers">
               {{user.name}} - {{user.permission}}
               <span v-if="user.name === username"> (current)</span>
-              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'viewer'"> (<a @click="setPermission(roomFolder,user.name,'editor')">Make editor</a>)</span>
-              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'editor'"> (<a @click="setPermission(roomFolder,user.name,'viewer')">Make viewer</a>)</span>
+              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'viewer'"> (<a @click="setPermission(room,user.name,'editor')">Make editor</a>)</span>
+              <span v-if="user.name !== username && currentPermission === 'creator' && user.permission === 'editor'"> (<a @click="setPermission(room,user.name,'viewer')">Make viewer</a>)</span>
             </li>
           </ul>
+          <button @click="currentSlide = 1">Switch to slide 1</button>
+          <button @click="currentSlide = 2">Switch to slide 2</button>
         `,
         setup() {
           let canvas = null;
@@ -71,151 +76,181 @@
             isDrawingMode: false,
             currentSlide: 1,
             numberOfSlides: null,
-            room: "",
-            roomFolder: "",
             connectedUsers: [],
-            currentUser: ""
+            currentUser: "",
           };
         },
         computed: {
           currentPermission() {
             return this.connectedUsers.find((x) => x.name === this.username)?.permission ?? "viewer";
           },
+          room() {
+            return `room${this.$route.params.id}`;
+          },
+          roomSlot() {
+            return `room${this.$route.params.id}.${this.currentSlide}`;
+          },
+          username() {
+            return localStorage.getItem("username") ?? "editor1";
+          },
         },
         async mounted() {
-          this.socket = io();
-          this.room = `room${this.$route.params.id}.${this.currentSlide}`;
-          this.roomFolder = `room${this.$route.params.id}`;
-          this.username = localStorage.getItem("username") ?? "editor1";
-          this.socket.emit("joinPresentation", this.roomFolder, this.username);
-          // Corregir esto despues
-          this.canvas = new fabric.Canvas("canvas");
-          const response = await axios.get(`/api/getSlide/${this.roomFolder}?page=${this.currentSlide}`);
-          this.canvas.selection = false; //Temporary
-          this.canvas.loadFromJSON(response.data.content, this.canvas.renderAll.bind(this.canvas), (o, object) => {
-            console.log("Object loaded:", object);
-            this.socket.emit("joinRoom", this.room);
-          });
-
-          //Lista de usuarios
-          this.socket.on("receivePresentation", (users) => {
-            debugger
-            const uniqueUsers = [...new Map(users.map((x) => [x["name"], x])).values()];
-            this.connectedUsers = uniqueUsers;
-          });
-
-          //Circle
-          this.socket.on("receiveCircle", (circle) => {
-            this.canvas.add(new fabric.Circle(circle));
-          });
-
-          //Square
-          this.socket.on("receiveSquare", (square) => {
-            this.canvas.add(new fabric.Rect(square));
-          });
-
-          //Line
-          this.socket.on("receiveLine", (line) => {
-            const receivedLine = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
-              id: line.id,
-              stroke: line.stroke,
-              strokeWidth: line.strokeWidth,
-            });
-            this.canvas.add(receivedLine);
-          });
-
-          // Line Arrow
-          this.socket.on("receiveLineArrow", (arrow) => {
-            const line = new fabric.Line([arrow.x1, arrow.y1, arrow.x2, arrow.y2], {
-              stroke: arrow.stroke,
-              strokeWidth: arrow.strokeWidth,
-            });
-            const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
-            const arrowhead = new fabric.Triangle({
-              left: arrow.x2 + 5,
-              top: arrow.y2 + 5,
-              originX: "center",
-              originY: "center",
-              angle: (angle * 180) / Math.PI + 90,
-              width: arrow.arrowSize,
-              height: arrow.arrowSize,
-              fill: arrow.stroke,
-            });
-            const o = new fabric.Group([line, arrowhead]);
-            o.set({ id: arrow.id });
-            this.canvas.add(o);
-          });
-
-          //Brush
-          this.canvas.on("object:added", (event) => {
-            if (event.target.type === "image") {
-              const exists1 = this.canvas.getObjects().some((x) => x.id === (event.target?.id || 0));
-              if (exists1) return;
-              const image = event.target;
-              image.id = Math.floor(100000 + Math.random() * 900000);
-              const string = JSON.stringify(image.toJSON(["id"]));
-              this.socket.emit("drawing", string, this.room);
-              this.saveUndoRedo(image);
-            }
-          });
-          this.socket.on("receiveDrawing", (string) => {
-            const objectData = JSON.parse(string);
-            const imageUrl = objectData.src;
-            fabric.Image.fromURL(imageUrl, (img) => {
-              img.set({
-                id: objectData.id,
-                left: objectData.left,
-                top: objectData.top,
-                scaleX: objectData.scaleX,
-                scaleY: objectData.scaleY,
-                angle: objectData.angle,
-                flipX: objectData.flipX,
-                flipY: objectData.flipY,
-              });
-              this.canvas.add(img);
-            });
-          });
-
-          //Text
-          this.socket.on("receiveText", (text) => {
-            this.canvas.add(new fabric.Textbox("Editable Text", text));
-          });
-
-          //Object modified
-          this.canvas.on("object:modified", (e) => {
-            const data = {
-              text: e.target.text,
-              id: e.target.id,
-              left: e.target.left,
-              top: e.target.top,
-              scaleX: e.target.scaleX,
-              scaleY: e.target.scaleY,
-              angle: e.target.angle,
-              radius: e.target.radius,
-              width: e.target.width,
-              flipX: e.target.flipX,
-              flipY: e.target.flipY,
-            };
-            this.socket.emit("objectModified", data, this.room);
-            console.log(e.target.toJSON(["id"]));
-            this.saveUndoRedo();
-          });
-          this.socket.on("receiveObjectModified", (data) => {
-            const object = this.canvas.getObjects().find((x) => x.id === data.id);
-            if (object === undefined) return;
-            object.set({ ...data });
-            object.setCoords();
-            this.canvas.renderAll();
-          });
-
-          //Delete
-          this.socket.on("deleteObject", (id) => {
-            const object = this.canvas.getObjects().find((x) => x.id === id);
-            this.canvas.remove(object);
-          });
+          this.setup();
+          await this.setupSlide();
         },
         methods: {
-          setPermission(room,user,permission){
+          setup() {
+            this.socket = io();
+            this.socket.emit("joinPresentation", this.room, this.username);
+
+            //Lista de usuarios
+            this.socket.on("receivePresentation", (users) => {
+              users = users.filter((x) => x.id === this.room);
+              let uniqueUsers = [...new Map(users.map((x) => [x["name"], x])).values()];
+              this.connectedUsers = uniqueUsers;
+            });
+          },
+
+          destroy() {
+            this.socket.removeAllListeners();
+            this.socket = null;
+            this.destroyUndoRedo();
+          },
+
+          async setupSlide() {
+            this.socket.emit("joinRoom", this.roomSlot)
+            this.roomSlotToLeave = this.roomSlot
+            const response = await axios.get(`/api/getSlide/${this.room}?page=${this.currentSlide}`);
+            if (this.currentPermission === "viewer") this.canvas = new fabric.StaticCanvas("canvas");
+            else this.canvas = new fabric.Canvas("canvas");
+            this.canvas.selection = false; //Temporary
+            this.canvas.loadFromJSON(response.data.content, this.canvas.renderAll.bind(this.canvas), (o, object) => {});
+
+            //Circle
+            this.socket.on("receiveCircle", (circle) => {
+              this.canvas.add(new fabric.Circle(circle));
+            });
+
+            //Square
+            this.socket.on("receiveSquare", (square) => {
+              this.canvas.add(new fabric.Rect(square));
+            });
+
+            //Line
+            this.socket.on("receiveLine", (line) => {
+              const receivedLine = new fabric.Line([line.x1, line.y1, line.x2, line.y2], {
+                id: line.id,
+                stroke: line.stroke,
+                strokeWidth: line.strokeWidth,
+              });
+              this.canvas.add(receivedLine);
+            });
+
+            // Line Arrow
+            this.socket.on("receiveLineArrow", (arrow) => {
+              const line = new fabric.Line([arrow.x1, arrow.y1, arrow.x2, arrow.y2], {
+                stroke: arrow.stroke,
+                strokeWidth: arrow.strokeWidth,
+              });
+              const angle = Math.atan2(arrow.y2 - arrow.y1, arrow.x2 - arrow.x1);
+              const arrowhead = new fabric.Triangle({
+                left: arrow.x2 + 5,
+                top: arrow.y2 + 5,
+                originX: "center",
+                originY: "center",
+                angle: (angle * 180) / Math.PI + 90,
+                width: arrow.arrowSize,
+                height: arrow.arrowSize,
+                fill: arrow.stroke,
+              });
+              const o = new fabric.Group([line, arrowhead]);
+              o.set({ id: arrow.id });
+              this.canvas.add(o);
+            });
+
+            //Brush
+            this.canvas.on("object:added", (event) => {
+              if (event.target.type === "image") {
+                const exists1 = this.canvas.getObjects().some((x) => x.id === (event.target?.id || 0));
+                if (exists1) return;
+                const image = event.target;
+                image.id = Math.floor(100000 + Math.random() * 900000);
+                const string = JSON.stringify(image.toJSON(["id"]));
+                this.socket.emit("drawing", string, this.roomSlot);
+                this.saveUndoRedo(image);
+              }
+            });
+            this.socket.on("receiveDrawing", (string) => {
+              const objectData = JSON.parse(string);
+              const imageUrl = objectData.src;
+              fabric.Image.fromURL(imageUrl, (img) => {
+                img.set({
+                  id: objectData.id,
+                  left: objectData.left,
+                  top: objectData.top,
+                  scaleX: objectData.scaleX,
+                  scaleY: objectData.scaleY,
+                  angle: objectData.angle,
+                  flipX: objectData.flipX,
+                  flipY: objectData.flipY,
+                });
+                this.canvas.add(img);
+              });
+            });
+
+            //Text
+            this.socket.on("receiveText", (text) => {
+              this.canvas.add(new fabric.Textbox("Editable Text", text));
+            });
+
+            //Object modified
+            this.canvas.on("object:modified", (e) => {
+              const data = {
+                text: e.target.text,
+                id: e.target.id,
+                left: e.target.left,
+                top: e.target.top,
+                scaleX: e.target.scaleX,
+                scaleY: e.target.scaleY,
+                angle: e.target.angle,
+                radius: e.target.radius,
+                width: e.target.width,
+                flipX: e.target.flipX,
+                flipY: e.target.flipY,
+              };
+              this.socket.emit("objectModified", data, this.roomSlot);
+              this.saveUndoRedo();
+            });
+            this.socket.on("receiveObjectModified", (data) => {
+              const object = this.canvas.getObjects().find((x) => x.id === data.id);
+              if (object === undefined) return;
+              object.set({ ...data });
+              object.setCoords();
+              this.canvas.renderAll();
+            });
+
+            //Delete
+            this.socket.on("deleteObject", (id) => {
+              const object = this.canvas.getObjects().find((x) => x.id === id);
+              this.canvas.remove(object);
+            });
+          },
+
+          destroySlide() {
+            this.socket.emit("leaveRoom", this.roomSlotToLeave)
+            this.canvas.dispose();
+            this.canvas = null;
+            this.socket.off("receiveCircle");
+            this.socket.off("receiveSquare");
+            this.socket.off("receiveLine");
+            this.socket.off("receiveLineArrow");
+            this.socket.off("receiveDrawing");
+            this.socket.off("receiveText");
+            this.socket.off("receiveObjectModified");
+            this.socket.off("deleteObject");
+          },
+
+          setPermission(room, user, permission) {
             this.socket.emit("modifyPermission", room, user, permission);
           },
 
@@ -231,7 +266,7 @@
             const o = new fabric.Circle(circle);
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
-            this.socket.emit("addCircle", circle, this.room);
+            this.socket.emit("addCircle", circle, this.roomSlot);
             this.saveUndoRedo(o);
           },
 
@@ -248,7 +283,7 @@
             const o = new fabric.Rect(square);
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
-            this.socket.emit("addSquare", square, this.room);
+            this.socket.emit("addSquare", square, this.roomSlot);
             this.saveUndoRedo(o);
           },
 
@@ -270,7 +305,7 @@
             });
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
-            this.socket.emit("addLine", line, this.room);
+            this.socket.emit("addLine", line, this.roomSlot);
             this.saveUndoRedo(o);
           },
 
@@ -305,7 +340,7 @@
             o.set({ id });
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
-            this.socket.emit("addLineArrow", { ...arrow, id }, this.room);
+            this.socket.emit("addLineArrow", { ...arrow, id }, this.roomSlot);
             this.saveUndoRedo(o);
           },
 
@@ -332,14 +367,14 @@
             const o = new fabric.Textbox("Editable Text", text);
             this.canvas.add(o);
             this.canvas.setActiveObject(o);
-            this.socket.emit("addText", text, this.room);
+            this.socket.emit("addText", text, this.roomSlot);
             this.saveUndoRedo(o);
           },
 
           //Remove
           remove() {
             const id = this.canvas.getActiveObject().id;
-            this.socket.emit("deleteObject", id, this.room);
+            this.socket.emit("deleteObject", id, this.roomSlot);
             this.canvas.remove(this.canvas.getActiveObject());
             this.saveUndoRedo({ id, type: "Delete" });
           },
@@ -349,24 +384,35 @@
             // alert("Saving undo history")
             // console.log(o.toJSON(["id"]))
             const disk = this.canvas.toJSON(["id"]);
-            this.socket.emit("saveDataDisk", JSON.stringify(disk), this.room);
+            this.socket.emit("saveDataDisk", JSON.stringify(disk), this.roomSlot);
           },
 
           debugPrint() {
             alert(this.canvas.toJSON(["id"]).objects.length);
           },
 
-          destroyUndoRedo() {
-            alert("Destroying undo history");
-          },
+          destroyUndoRedo() {},
         },
-        beforeRouteLeave(to, from, next) {
-          this.canvas.dispose();
-          this.canvas = null;
-          this.socket.removeAllListeners();
-          this.socket = null;
-          this.destroyUndoRedo();
-          next();
+        unmounted() {
+          this.destroySlide();
+          this.destroy();
+        },
+        watch: {
+          async "$route.params.id"() {
+            this.destroySlide();
+            this.destroy();
+            Object.assign(this.$data, this.$options.data());
+            this.setup();
+            await this.setupSlide();
+          },
+          async currentSlide() {
+            this.destroySlide();
+            await this.setupSlide();
+          },
+          async currentPermission() {
+            this.destroySlide();
+            await this.setupSlide();
+          },
         },
       };
 

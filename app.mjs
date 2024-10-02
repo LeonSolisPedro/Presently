@@ -37,6 +37,7 @@ io.on('connection', (socket) => {
     io.to(room).emit('receivePresentation', users);
   });
 
+
   socket.on("modifyPermission", async (room, username, permission) => {
     const usersToUpdate  = users.filter(x => x.id === room && x.name === username)
     for (const user of usersToUpdate)
@@ -51,9 +52,7 @@ io.on('connection', (socket) => {
     io.to(room).emit('receivePresentation', users);
   })
 
-  socket.on('joinRoom', (room) => {
-    socket.join(room);
-  });
+  
 
 
   socket.on('disconnect', () => {
@@ -65,6 +64,15 @@ io.on('connection', (socket) => {
   });
 
 
+  socket.on('joinRoom', (room) => {
+    socket.join(room);
+  });
+
+  socket.on('leaveRoom', (room) => {
+    socket.leave(room);
+  });
+
+  
   socket.on('addCircle', (data, room) => {
     socket.to(room).emit('receiveCircle', data);
   });
