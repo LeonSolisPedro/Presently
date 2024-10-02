@@ -102,6 +102,7 @@
           setup() {
             this.socket = io();
             this.socket.emit("joinPresentation", this.room, this.username);
+            this.roomToLeave = this.room;
 
             //Lista de usuarios
             this.socket.on("receivePresentation", (users) => {
@@ -112,6 +113,7 @@
           },
 
           destroy() {
+            this.socket.emit("leavePresentation", this.roomToLeave)
             this.socket.removeAllListeners();
             this.socket = null;
             this.destroyUndoRedo();

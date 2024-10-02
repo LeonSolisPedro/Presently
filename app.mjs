@@ -52,16 +52,22 @@ io.on('connection', (socket) => {
     io.to(room).emit('receivePresentation', users);
   })
 
-  
-
+  socket.on('leavePresentation', (room) => {
+    socket.leave(room);
+    leavePresentation()
+  });
 
   socket.on('disconnect', () => {
+    leavePresentation()
+  });
+
+  const leavePresentation = () => {
     users = users.filter(x => x.idSocket !== socket.id)
     const rooms = io.sockets.adapter.rooms;
     for (let room of rooms.keys()) {
       io.to(room).emit('receivePresentation', users); // Emit to all rooms
     }
-  });
+  }
 
 
   socket.on('joinRoom', (room) => {
@@ -72,7 +78,7 @@ io.on('connection', (socket) => {
     socket.leave(room);
   });
 
-  
+
   socket.on('addCircle', (data, room) => {
     socket.to(room).emit('receiveCircle', data);
   });
