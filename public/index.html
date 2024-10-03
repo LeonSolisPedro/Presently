@@ -24,7 +24,7 @@
         <router-link to="/">Home</router-link>
         <router-link to="/slider/1">Slider</router-link>
       </nav>
-      <router-view></router-view>
+      <router-view :key="$route.params.id"></router-view>
     </div>
 
     <script>
@@ -240,7 +240,7 @@
 
           destroySlide() {
             this.socket.emit("leaveRoom", this.roomSlotToLeave)
-            this.canvas.dispose();
+            this.canvas?.dispose();
             this.canvas = null;
             this.socket.off("receiveCircle");
             this.socket.off("receiveSquare");
@@ -400,13 +400,6 @@
           this.destroy();
         },
         watch: {
-          async "$route.params.id"() {
-            this.destroySlide();
-            this.destroy();
-            Object.assign(this.$data, this.$options.data());
-            this.setup();
-            await this.setupSlide();
-          },
           async currentSlide() {
             this.destroySlide();
             await this.setupSlide();
